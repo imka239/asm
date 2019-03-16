@@ -1,4 +1,4 @@
-                section         .text
+section         .text
 
                 global          _start
 
@@ -63,6 +63,7 @@ sum:
 	xor 			r9, r9
 	ret
 exit:
+		main_check
                 mov             rax, 3
                 syscall
 
