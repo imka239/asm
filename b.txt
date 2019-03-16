@@ -1,0 +1,107 @@
+global          _start
+
+section         .text
+
+%macro write 2
+	mov 		rax, 1
+	mov 		rdi, 1
+	mov 		rsi, %1
+	mov 		rdx, %2
+	syscall
+%endmacro
+
+read:
+	xor			rax, rax
+	xor			rdi, rdi
+	mov			rsi, input_msg
+	mov			rdx, input_msg.len
+	syscall
+	ret
+
+parse:      
+      
+	mov rax, r8
+    mov rcx, 10
+    xor rdi, rdi
+	
+loop:
+
+    xor rdx, rdx
+    div rcx
+    add dl, '0'
+    push rdx
+    inc rdi
+    cmp rax, 0
+    je end
+    jmp loop
+	
+
+end:
+
+    mov [buf.len], dil
+    xor rcx, rcx
+	
+for:
+
+    pop rax
+    mov [buf + rcx], al
+    inc rcx
+    dec rdi
+    jz return
+    jmp for
+
+return:
+	ret
+
+check:
+	mov rax, input_msg
+	xor r10, r10
+	go:
+		cmp r10, input_msg.len
+		jg ret 
+		cmp rax, 8
+		jg check2
+		inc r10
+		mov rax, input_msg + r10 
+		jmp go
+	ret
+
+check2:
+	cmp 14, rax
+	jg sum
+	cmp rax, 32
+	je sum
+	ret 
+
+sum:
+	inc r8
+	ret
+
+_start:
+	poop:
+		call read
+		cmp rax, 0
+		jl err
+		je exit
+		call check
+		jmp poop
+		
+err:
+	call exit
+	
+exit:		
+		call parse
+		write buf, [buf.len]
+		mov 		rax, 60
+		xor 			rdi, rdi
+		syscall
+
+section         .bss
+
+input_msg:      resb              1024
+.len 		equ		  1024
+
+section         .bss
+
+buf:           			resb              20
+.len 						resb 				1
