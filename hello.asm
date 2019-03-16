@@ -1,159 +1,175 @@
+global          _start
+
 section         .text
 
-                global          _start
+%macro write 2
+	mov 		rax, 1
+	mov 		rdi, 1
+	mov 		rsi, %1
+	mov 		rdx, %2
+	syscall
+	cmp rax, 0
+	jl _writing_failure_error
+%endmacro
 
-_start:
-                pop             rax
-                cmp             rax, 2
-                jne             bad_args
+read:
+	xor			rax, rax
+	mov			rdi,  [input_fd]
+	mov			rsi, input_msg
+	mov			rdx, input_msg.len
+	syscall
+	ret
 
-                pop             rax
-                pop             rdi
-                mov             rax, 2
-                xor             rsi, rsi
-                xor             rdx, rdx
-                syscall
-				
-                cmp             rax, 0
-                jl              open_fail
-                mov             rdi, rax
+parse:      
+	mov rax, r8
+    mov rcx, 10
+    xor rdi, rdi
+	
+loop:
 
-                xor             rbx, rbx
+    xor rdx, rdx
+    div rcx
+    add dl, '0'
+    push rdx
+    inc rdi
+    cmp rax, 0
+    je end
+    jmp loop
+	
 
-.read_again:
-				xor 				r9, r9
-                xor             rax, rax
-                mov             rsi, buf
-                mov             rdx, buf_size
-                syscall
+end:
 
-                lea             rsi, [buf + rax]
-                neg             rax
-                jz              exit
-                jg              read_fail
+    mov [buf.len], dil
+    xor rcx, rcx
+	
+for:
 
-.next_byte:
-                movzx           edx, byte [rsi + rax]
-				call 				check1
-                inc             	rax
-                jnz             	.next_byte
-                jmp             	.read_again
+    pop rax
+    mov [buf + rcx], al
+    inc rcx
+    dec rdi
+    jz return
+    jmp for
+
+return:
+	ret
+
+check:
+	mov rax, input_msg
+	xor r10, r10
+	go:
+		cmp r10, input_msg.len
+		jg return
+		call check1
+		inc r10
+		mov rax, [input_msg + r10] 
+		jmp go
+	ret
 
 check1:
-		cmp 		dl, 8
-		jg 			check2
-		mov 		r9, 1
+		cmp al, 8
+		jg check2
+		mov r9, 1
 		ret
 
 check2:
-	cmp 		dl, 14
-	jl 				main_check
-	cmp 		dl, 32
-	je 			main_check
-	mov 		r9, 1
+	cmp al, 14
+	jl main_check
+	cmp al, 32
+	je main_check
+	mov r9, 1
 	ret 
 
 main_check:
-	cmp 		r9, 1
-	je 			sum
+	cmp r9, 1
+	je sum
 	ret
-	
+
 sum:
-	inc 			rbx
-	xor 			r9, r9
+	inc r8
+	xor r9, r9
 	ret
-exit:
-		main_check
-                mov             rax, 3
-                syscall
 
-                mov             rax, rbx
-                call            write_number
+_start:
+	pop rax
+	cmp rax, 2
+	jne _wrong_args_error
+	
+	pop rax
+	mov rax, 2
+	pop rdi
+	xor rsi, rsi
+	xor rdx, rdx
+	syscall
+	
+	cmp     rax, 0
+    jl      _input_init_failure_error
+    mov     [input_fd], rax
+	poop:
+		xor r9, r9
+		call read
+		cmp rax, 0
+		jl err
+		je exit
+		call check
+		jmp poop
+		
+err:
+	call _reading_failure_error
+	
+exit:		
+		call parse
+		write buf, [buf.len]
+		write   endl, endl.len
+		mov 		rax, 60
+		xor 			rdi, rdi
+		syscall
+	
+exit1:
+		mov 		rax, 60
+		xor 			rdi, rdi
+		syscall
+	
+_wrong_args_error:
+    write   input_args_failure_msg, input_args_failure_msg_len
+write   endl, endl.len
+    call exit1
 
-                mov             rax, 60
-                xor             rdi, rdi
-                syscall
+_input_init_failure_error:
+    write   input_init_failure_msg, input_init_failure_msg_len
+write   endl, endl.len    
+call exit1
 
-; rax -- number to print
-write_number:
-                mov             rbp, rsp
-                mov             rdi, rsp
-                sub             rsp, 24
+_reading_failure_error:
+    write   reading_failure_msg, reading_failure_msg_len
+	write   endl, endl.len
+    call exit1
 
-                dec             rdi
-                mov             byte [rdi], 10
+_writing_failure_error:
+    write   writing_failure_msg, writing_failure_msg_len
+	write   endl, endl.len
+    call exit1
 
-                or              rax, rax
-                jz              .write_zero
+input_args_failure_msg      db      "usage: count_words INPUT_FILE"
+input_args_failure_msg_len  equ     $ - input_args_failure_msg
+input_init_failure_msg      db      "input init failure"
+input_init_failure_msg_len  equ     $ - input_init_failure_msg
+reading_failure_msg         db      "reading failure"
+reading_failure_msg_len     equ     $ - reading_failure_msg
+writing_failure_msg         db      "writing failure"
+writing_failure_msg_len     equ     $ - writing_failure_msg
 
-                mov             ebx, 10
-.loop:
-                xor             edx, edx
-                div             rbx
+section 	.rodata
+endl        db      10
+.len    	equ        1
 
-                add             edx, '0'
-                dec             rdi
-                mov             byte [rdi], dl
+section         .bss
 
-                or              rax, rax
-                jnz             .loop
-                jmp             .print
+input_msg:      resb              1024
+.len 				  equ		  		  1024
 
-.write_zero:
-                dec             rdi
-                mov             byte [rdi], '0'
+section         .bss
 
-.print:
-                mov             eax, 1
-                mov             rsi, rdi
-                mov             rdx, rbp
-                sub             rdx, rdi
-                mov             edi, eax
-                syscall
-
-                mov             rsp, rbp
-                ret
-
-bad_args:
-                mov             rsi, bad_args_msg
-                mov             rdx, bad_args_msg_size
-                jmp             print_error_and_quit
-
-open_fail:
-                mov             rsi, open_fail_msg
-                mov             rdx, open_fail_msg_size
-                jmp             print_error_and_quit
-
-read_fail:
-                mov             rsi, read_fail_msg
-                mov             rdx, read_fail_msg_size
-                jmp             print_error_and_quit
-
-write_fail:
-                mov             rsi, write_fail_msg
-                mov             rdx, write_fail_msg_size
-                jmp             print_error_and_quit
-
-print_error_and_quit:
-                mov             rax, 1
-                mov             rdi, 1
-                syscall
-
-                mov             rax, 60
-                mov             rdi, 1
-                syscall
-
-                section         .rodata
-bad_args_msg:   db              "argument number mismatch", 10
-bad_args_msg_size: equ $ - bad_args_msg
-open_fail_msg:  db              "open failed", 10
-open_fail_msg_size: equ $ - open_fail_msg
-read_fail_msg:  db              "read failed", 10
-read_fail_msg_size: equ $ - read_fail_msg
-write_fail_msg: db              "write failed", 10
-write_fail_msg_size: equ $ - write_fail_msg
-
-                section         .bss
-
-buf_size:       equ             16 * 1024
-buf:            resb            buf_size 
+buf:           			resb              20
+.len 						resb 				1
+input_fd    				resq    			1
