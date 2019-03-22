@@ -35,7 +35,6 @@ mul_long_short_in_spec_place:
                 push            rdi
                 push            rcx
 				push		r8
-				push		rsi
 
                 xor             r11, r11
 .loop:
@@ -43,14 +42,14 @@ mul_long_short_in_spec_place:
                 mul             rbx
                 add             rax, r11
                 adc             rdx, 0
-                adc             [r8], rax
-                add             rdi, 8
+                add             [r8], rax
+				adc			   rdx, 0
+				add             rdi, 8
 		add		r8, 8
                 mov             r11, rdx
                 dec             rcx
                 jnz             .loop
 		
-				pop		rsi
 				pop		r8
                 pop             rcx
                 pop             rdi
