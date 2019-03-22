@@ -1,175 +1,348 @@
-global          _start
+                section         .text
 
-section         .text
-
-%macro write 2
-	mov 		rax, 1
-	mov 		rdi, 1
-	mov 		rsi, %1
-	mov 		rdx, %2
-	syscall
-	cmp rax, 0
-	jl _writing_failure_error
-%endmacro
-
-read:
-	xor			rax, rax
-	mov			rdi,  [input_fd]
-	mov			rsi, input_msg
-	mov			rdx, input_msg.len
-	syscall
-	ret
-
-parse:      
-	mov rax, r8
-    mov rcx, 10
-    xor rdi, rdi
-	
-loop:
-
-    xor rdx, rdx
-    div rcx
-    add dl, '0'
-    push rdx
-    inc rdi
-    cmp rax, 0
-    je end
-    jmp loop
-	
-
-end:
-
-    mov [buf.len], dil
-    xor rcx, rcx
-	
-for:
-
-    pop rax
-    mov [buf + rcx], al
-    inc rcx
-    dec rdi
-    jz return
-    jmp for
-
-return:
-	ret
-
-check:
-	mov rax, input_msg
-	xor r10, r10
-	go:
-		cmp r10, input_msg.len
-		jg return
-		call check1
-		inc r10
-		mov rax, [input_msg + r10] 
-		jmp go
-	ret
-
-check1:
-		cmp al, 8
-		jg check2
-		mov r9, 1
-		ret
-
-check2:
-	cmp al, 14
-	jl main_check
-	cmp al, 32
-	je main_check
-	mov r9, 1
-	ret 
-
-main_check:
-	cmp r9, 1
-	je sum
-	ret
-
-sum:
-	inc r8
-	xor r9, r9
-	ret
-
+                global          _start
 _start:
-	pop rax
-	cmp rax, 2
-	jne _wrong_args_error
-	
-	pop rax
-	mov rax, 2
-	pop rdi
-	xor rsi, rsi
-	xor rdx, rdx
-	syscall
-	
-	cmp     rax, 0
-    jl      _input_init_failure_error
-    mov     [input_fd], rax
-	poop:
-		xor r9, r9
-		call read
-		cmp rax, 0
-		jl err
-		je exit
-		call check
-		jmp poop
+
+                sub             rsp, 4 * 128 * 8
+                lea             rdi, [rsp + 128 * 8]
+                mov             rcx, 128
+		mov		r10, 128
+		lea		r8, [rsp + 2 * 128 * 8]
+                call            read_long
+                mov             rdi, rsp
+                call            read_long
+                lea             rsi, [rsp + 128 * 8]
+                call            mul_long_long
 		
-err:
-	call _reading_failure_error
-	
-exit:		
-		call parse
-		write buf, [buf.len]
-		write   endl, endl.len
-		mov 		rax, 60
-		xor 			rdi, rdi
-		syscall
-	
-exit1:
-		mov 		rax, 60
-		xor 			rdi, rdi
-		syscall
-	
-_wrong_args_error:
-    write   input_args_failure_msg, input_args_failure_msg_len
-write   endl, endl.len
-    call exit1
+				mov		rdi, r8
+				mov		rcx, 256
+                call            write_long
 
-_input_init_failure_error:
-    write   input_init_failure_msg, input_init_failure_msg_len
-write   endl, endl.len    
-call exit1
+                mov             al, 0x0a
+                call            write_char
 
-_reading_failure_error:
-    write   reading_failure_msg, reading_failure_msg_len
-	write   endl, endl.len
-    call exit1
+                jmp             exit
 
-_writing_failure_error:
-    write   writing_failure_msg, writing_failure_msg_len
-	write   endl, endl.len
-    call exit1
+; multiplies long number by a short
+;    rdi -- address of multiplier #1 (long number)
+;    rbx -- multiplier #2 (64-bit unsigned)
+;    rcx -- length of long number in qwords
+; result:
+;    product is written to rdi
 
-input_args_failure_msg      db      "usage: count_words INPUT_FILE"
-input_args_failure_msg_len  equ     $ - input_args_failure_msg
-input_init_failure_msg      db      "input init failure"
-input_init_failure_msg_len  equ     $ - input_init_failure_msg
-reading_failure_msg         db      "reading failure"
-reading_failure_msg_len     equ     $ - reading_failure_msg
-writing_failure_msg         db      "writing failure"
-writing_failure_msg_len     equ     $ - writing_failure_msg
+mul_long_short_in_spec_place:
+                push            rax
+                push            rdi
+                push            rcx
+				push		r8
+				push		rsi
 
-section 	.rodata
-endl        db      10
-.len    	equ        1
+                xor             r11, r11
+.loop:
+                mov             rax, [rdi]
+                mul             rbx
+                add             rax, r11
+                adc             rdx, 0
+                adc             [r8], rax
+                add             rdi, 8
+		add		r8, 8
+                mov             r11, rdx
+                dec             rcx
+                jnz             .loop
+		
+				pop		rsi
+				pop		r8
+                pop             rcx
+                pop             rdi
+                pop             rax
+                ret
+; mul two long number
+;    rdi -- address of summand #1 (long number)
+;    rsi -- address of summand #2 (long number)
+;    rcx -- length of long numbers in qwords
+; result:
+;    sum is written to rdi
 
-section         .bss
+mul_long_long:
+                push            rdi
+                push            rsi
+                push            rcx
+				push		r10
+				push		r8
 
-input_msg:      resb              1024
-.len 				  equ		  		  1024
+                clc
+.loop:
+				mov		rbx, [rsi]
+                lea             rsi, [rsi + 8]
+                call		mul_long_short_in_spec_place
+                lea             r8, [r8 + 8]
+                dec             r10
+                jnz             .loop
 
-section         .bss
+				pop		r8
+				pop		r10
+                pop             rcx
+                pop             rsi
+                pop             rdi
+                ret
 
-buf:           			resb              20
-.len 						resb 				1
-input_fd    				resq    			1
+; adds 64-bit number to long number
+;    rdi -- address of summand #1 (long number)
+;    rax -- summand #2 (64-bit unsigned)
+;    rcx -- length of long number in qwords
+; result:
+;    sum is written to rdi
+add_long_short:
+                push            rdi
+                push            rcx
+                push            rdx
+
+                xor             rdx,rdx
+.loop:
+                add             [rdi], rax
+                adc             rdx, 0
+                mov             rax, rdx
+                xor             rdx, rdx
+                add             rdi, 8
+                dec             rcx
+                jnz             .loop
+
+                pop             rdx
+                pop             rcx
+                pop             rdi
+                ret
+
+; multiplies long number by a short
+;    rdi -- address of multiplier #1 (long number)
+;    rbx -- multiplier #2 (64-bit unsigned)
+;    rcx -- length of long number in qwords
+; result:
+;    product is written to rdi
+mul_long_short:
+                push            rax
+                push            rdi
+                push            rcx
+
+                xor             rsi, rsi
+.loop:
+                mov             rax, [rdi]
+                mul             rbx
+                add             rax, rsi
+                adc             rdx, 0
+                mov             [rdi], rax
+                add             rdi, 8
+                mov             rsi, rdx
+                dec             rcx
+                jnz             .loop
+
+                pop             rcx
+                pop             rdi
+                pop             rax
+                ret
+
+; divides long number by a short
+;    rdi -- address of dividend (long number)
+;    rbx -- divisor (64-bit unsigned)
+;    rcx -- length of long number in qwords
+; result:
+;    quotient is written to rdi
+;    rdx -- remainder
+div_long_short:
+                push            rdi
+                push            rax
+                push            rcx
+
+                lea             rdi, [rdi + 8 * rcx - 8]
+                xor             rdx, rdx
+
+.loop:
+                mov             rax, [rdi]
+                div             rbx
+                mov             [rdi], rax
+                sub             rdi, 8
+                dec             rcx
+                jnz             .loop
+
+                pop             rcx
+                pop             rax
+                pop             rdi
+                ret
+
+; assigns a zero to long number
+;    rdi -- argument (long number)
+;    rcx -- length of long number in qwords
+set_zero:
+                push            rax
+                push            rdi
+                push            rcx
+
+                xor             rax, rax
+                rep stosq
+
+                pop             rcx
+                pop             rdi
+                pop             rax
+                ret
+
+; checks if a long number is a zero
+;    rdi -- argument (long number)
+;    rcx -- length of long number in qwords
+; result:
+;    ZF=1 if zero
+is_zero:
+                push            rax
+                push            rdi
+                push            rcx
+
+                xor             rax, rax
+                rep scasq
+
+                pop             rcx
+                pop             rdi
+                pop             rax
+                ret
+
+; read long number from stdin
+;    rdi -- location for output (long number)
+;    rcx -- length of long number in qwords
+read_long:
+                push            rcx
+                push            rdi
+                call            set_zero
+.loop:
+                call            read_char
+                or              rax, rax
+                js              exit
+                cmp             rax, 0x0a
+                je              .done
+                cmp             rax, '0'
+                jb              .invalid_char
+                cmp             rax, '9'
+                ja              .invalid_char
+
+                sub             rax, '0'
+                mov             rbx, 10
+                call            mul_long_short
+                call            add_long_short
+                jmp             .loop
+
+.done:
+                pop             rdi
+                pop             rcx
+                ret
+
+.invalid_char:
+                mov             rsi, invalid_char_msg
+                mov             rdx, invalid_char_msg_size
+                call            print_string
+                call            write_char
+                mov             al, 0x0a
+                call            write_char
+
+.skip_loop:
+                call            read_char
+                or              rax, rax
+                js              exit
+                cmp             rax, 0x0a
+                je              exit
+                jmp             .skip_loop
+
+; write long number to stdout
+;    rdi -- argument (long number)
+;    rcx -- length of long number in qwords
+write_long:
+                push            rax
+                push            rcx
+
+                mov             rax, 20
+                mul             rcx
+                mov             rbp, rsp
+                sub             rsp, rax
+
+                mov             rsi, rbp
+.loop:
+                mov             rbx, 10
+                call            div_long_short
+                add             rdx, '0'
+                dec             rsi
+                mov             [rsi], dl
+                call            is_zero
+                jnz             .loop
+
+                mov             rdx, rbp
+                sub             rdx, rsi
+                call            print_string
+
+                mov             rsp, rbp
+                pop             rcx
+                pop             rax
+                ret
+
+; read one char from stdin
+; result:
+;    rax == -1 if error occurs
+;    rax \in [0; 255] if OK
+read_char:
+                push            rcx
+                push            rdi
+
+                sub             rsp, 1
+                xor             rax, rax
+                xor             rdi, rdi
+                mov             rsi, rsp
+                mov             rdx, 1
+                syscall
+
+                cmp             rax, 1
+                jne             .error
+                xor             rax, rax
+                mov             al, [rsp]
+                add             rsp, 1
+
+                pop             rdi
+                pop             rcx
+                ret
+.error:
+                mov             rax, -1
+                add             rsp, 1
+                pop             rdi
+                pop             rcx
+                ret
+
+; write one char to stdout, errors are ignored
+;    al -- char
+write_char:
+                sub             rsp, 1
+                mov             [rsp], al
+
+                mov             rax, 1
+                mov             rdi, 1
+                mov             rsi, rsp
+                mov             rdx, 1
+                syscall
+                add             rsp, 1
+                ret
+
+exit:
+                mov             rax, 60
+                xor             rdi, rdi
+                syscall
+
+; print string to stdout
+;    rsi -- string
+;    rdx -- size
+print_string:
+                push            rax
+
+                mov             rax, 1
+                mov             rdi, 1
+                syscall
+
+                pop             rax
+                ret
+
+
+                section         .rodata
+invalid_char_msg:
+                db              "Invalid character: "
+invalid_char_msg_size: equ             $ - invalid_char_msg
